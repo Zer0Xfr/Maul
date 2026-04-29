@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maul"
+version = "0.1.0"
+description = "Active Directory Privilege Escalation Assessment — Linux edition"
+authors = [{name = "Z3R0"}]
+license = {text = "GPL-3.0-only"}
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["active-directory", "security", "pentest", "red-team", "enumeration"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Security",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "impacket>=0.12.0",
+    "ldap3>=2.9",
+    "certipy-ad>=4.8",
+    "rich>=13.0",
+    "jinja2>=3.1",
+    "pycryptodome>=3.19",
+    "dnspython>=2.4",
+    "argcomplete>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+maul = "maul.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Zer0Xfr/Maul"
+
+[tool.setuptools.packages.find]
+include = ["maul*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
