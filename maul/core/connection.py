@@ -103,7 +103,14 @@ class ADConnection:
             _err.print("[bold red][!][/bold red] STARTTLS failed — try using --ldaps for SSL or plain LDAP without TLS")
             sys.exit(1)
         except (ldap3.core.exceptions.LDAPBindError, AuthError) as exc:
-            _err.print(f"[bold red][!][/bold red] Authentication failed for {self.username}@{self.domain} — check credentials and that the user exists in this domain")
+            detail = str(exc).lower()
+            if "strongerauthrequ" in detail or "stronger" in detail:
+                _err.print(
+                    f"[bold red][!][/bold red] DC requires a secure channel for LDAP auth "
+                    f"(strongerAuthRequired) — retry with [bold]--ldaps[/bold]"
+                )
+            else:
+                _err.print(f"[bold red][!][/bold red] Authentication failed for {self.username}@{self.domain} — check credentials and that the user exists in this domain")
             log.debug("Bind error detail: %s", exc)
             sys.exit(1)
         except Exception as exc:
@@ -317,13 +324,30 @@ class ADConnection:
         return conn
 
     def _connect_password(self, server: ldap3.Server) -> ldap3.Connection:
-        conn = ldap3.Connection(
-            server,
-            user=f"{self.domain}\\{self.username}",
-            password=self.password or "",
-            authentication=NTLM,
-            auto_bind=ldap3.AUTO_BIND_NO_TLS if not self.use_ldaps else True,
-        )
+        if self.use_ldaps:
+            conn = ldap3.Connection(
+                server,
+                user=f"{self.domain}\\{self.username}",
+                password=self.password or "",
+                authentication=NTLM,
+                auto_bind=True,
+            )
+        else:
+            # Try StartTLS on port 389 first — DCs that enforce signing/channel binding
+            # reject plain NTLM binds with 'strongerAuthRequired'.
+            conn = ldap3.Connection(
+                server,
+                user=f"{self.domain}\\{self.username}",
+                password=self.password or "",
+                authentication=NTLM,
+                auto_bind=False,
+            )
+            conn.open()
+            try:
+                conn.start_tls()
+            except ldap3.core.exceptions.LDAPStartTLSError:
+                pass  # TLS not available — fall through to plain bind
+            conn.bind()
         if not conn.bound:
             conn.bind()
         return conn
@@ -426,15 +450,22 @@ class ADConnection:
         except ImportError:
             raise ConnectionError("impacket is required for SMB connections")
 
-        smb = SMBConnection(self.dc, self.dc, timeout=10)
+        smb = SMBConnection(self.dc, self.dc, sess_port=445, timeout=10)
+
+        # Use the short (NetBIOS) domain name from the NTLM challenge when available.
+        # Many DCs reject the FQDN in the NTLMSSP Domain field — NXC works because
+        # impacket extracts the NetBIOS domain from the server's challenge by default
+        # when you pass an empty domain string.  Passing the FQDN overrides that logic
+        # and can trigger STATUS_LOGON_FAILURE on strict DCs.
+        smb_domain = self.domain.split(".")[0].upper()
 
         if self.use_kerberos:
             smb.kerberosLogin(self.username, self.password or "", self.domain, lmhash="", nthash="", aesKey=self.aes_key or "", kdcHost=self.kdchost or self.dc)
         elif self.nthash:
             lm, nt = ("aad3b435b51404eeaad3b435b51404ee", self.nthash) if ":" not in self.nthash else self.nthash.split(":", 1)
-            smb.login(self.username, "", self.domain, lmhash=lm, nthash=nt)
+            smb.login(self.username, "", smb_domain, lmhash=lm, nthash=nt)
         else:
-            smb.login(self.username, self.password or "", self.domain)
+            smb.login(self.username, self.password or "", smb_domain)
 
         return smb
 
