@@ -114,7 +114,16 @@ class ADConnection:
             log.debug("Bind error detail: %s", exc)
             sys.exit(1)
         except Exception as exc:
-            _err.print(f"[bold red][!][/bold red] Connection failed: {exc}")
+            detail = str(exc).lower()
+            if "invalidcredentials" in detail or "52e" in detail:
+                _err.print(f"[bold red][!][/bold red] Authentication failed for {self.username}@{self.domain} — check credentials")
+            elif "strongerauthrequ" in detail or "stronger" in detail:
+                _err.print(
+                    f"[bold red][!][/bold red] DC requires a secure channel for LDAP auth "
+                    f"(strongerAuthRequired) — retry with [bold]--ldaps[/bold]"
+                )
+            else:
+                _err.print(f"[bold red][!][/bold red] Connection failed: {exc}")
             if log.isEnabledFor(logging.DEBUG):
                 _err.print(traceback.format_exc())
             sys.exit(1)
@@ -324,7 +333,17 @@ class ADConnection:
         return conn
 
     def _connect_password(self, server: ldap3.Server) -> ldap3.Connection:
+        # Use impacket's LDAP client over LDAPS — it computes Channel Binding
+        # Tokens (CBT) from the TLS certificate, which is required when the DC
+        # enforces channel binding ("Always").  ldap3's NTLM doesn't do this.
         if self.use_ldaps:
+            try:
+                return self._connect_password_impacket()
+            except ImportError:
+                pass
+            except Exception as exc:
+                log.debug("impacket LDAPS bind failed, trying ldap3: %s", exc)
+
             conn = ldap3.Connection(
                 server,
                 user=f"{self.domain}\\{self.username}",
@@ -352,9 +371,27 @@ class ADConnection:
             conn.bind()
         return conn
 
+    def _connect_password_impacket(self) -> ldap3.Connection:
+        """LDAPS bind via impacket — supports channel binding tokens."""
+        from impacket.ldap import ldap as impacket_ldap
+
+        ldap_url = f"ldaps://{self.dc}"
+        conn_impl = impacket_ldap.LDAPConnection(
+            url=ldap_url,
+            baseDN=self.root_dn if self._rootdse else domain_to_dn(self.domain),
+            dstIp=self.dc,
+        )
+        conn_impl.login(
+            self.username,
+            self.password or "",
+            self.domain,
+        )
+
+        server = ldap3.Server(self.dc, port=636, use_ssl=True, get_info=ldap3.ALL, connect_timeout=self.timeout)
+        return _ImpacketLDAPShim(conn_impl, server)
+
     def _connect_nthash(self, server: ldap3.Server) -> ldap3.Connection:
         """NTLM pass-the-hash via impacket's LDAP client (ldap3 can't do PtH natively)."""
-        # Normalise to LMHASH:NTHASH
         if ":" in self.nthash:
             lm, nt = self.nthash.split(":", 1)
         else:
@@ -363,11 +400,12 @@ class ADConnection:
 
         try:
             from impacket.ldap import ldap as impacket_ldap
-            from impacket.ldap import ldapasn1 as ldapasn1_impacket
 
-            protocol = "ldaps" if self.use_ldaps else "ldap"
+            # Always use LDAPS for PtH — ensures channel binding works
+            protocol = "ldaps" if self.use_ldaps else "ldaps"
             ldap_url = f"{protocol}://{self.dc}"
-            conn_impl = impacket_ldap.LDAPConnection(ldap_url, self.root_dn if self._rootdse else "")
+            base_dn = self.root_dn if self._rootdse else domain_to_dn(self.domain)
+            conn_impl = impacket_ldap.LDAPConnection(ldap_url, base_dn, dstIp=self.dc)
             conn_impl.login(
                 self.username,
                 "",
@@ -375,7 +413,6 @@ class ADConnection:
                 lm,
                 nt,
             )
-            # Wrap in a shim so the rest of the code uses the same ldap3 interface
             return _ImpacketLDAPShim(conn_impl, server)
         except ImportError:
             raise AuthError("impacket is required for NT-hash authentication")
@@ -471,11 +508,11 @@ class ADConnection:
 
 
 class _ImpacketLDAPShim:
-    """Minimal shim so impacket-backed PtH connections expose the ldap3 interface expected elsewhere.
+    """Shim that wraps impacket's LDAPConnection to expose the ldap3 interface
+    expected by ldap_client.py helpers (paged_search / search).
 
-    Only the subset of ldap3.Connection used by ldap_client helpers is implemented.
-    This is a stopgap — most modules use ldap3's paged_search which won't work via this shim.
-    TODO: replace with a proper impacket-backed paged search in ldap_client.
+    Impacket handles channel binding tokens (CBT) and pass-the-hash natively,
+    which ldap3's NTLM auth does not support.
     """
 
     def __init__(self, impl, server: ldap3.Server) -> None:
@@ -487,16 +524,138 @@ class _ImpacketLDAPShim:
         self.response = []
 
     def unbind(self) -> None:
-        pass
+        try:
+            self._impl.close()
+        except Exception:
+            pass
 
-    def search(self, *args, **kwargs):
-        raise NotImplementedError("Full LDAP search via impacket shim not yet implemented")
+    def search(self, search_base="", search_filter="(objectClass=*)",
+               search_scope=SUBTREE, attributes=None, get_operational_attributes=False,
+               controls=None, **kwargs):
+        from impacket.ldap.ldapasn1 import Scope, SimplePagedResultsControl, CONTROL_PAGEDRESULTS
+        scope_map = {
+            SUBTREE: Scope("wholeSubtree"),
+            BASE: Scope("baseObject"),
+            "BASE": Scope("baseObject"),
+            "LEVEL": Scope("singleLevel"),
+        }
+        scope = scope_map.get(search_scope, Scope("wholeSubtree"))
+        search_controls = None
+        if controls:
+            search_controls = [_build_impacket_control(c) for c in controls]
 
-    # ldap3.Connection.extend.standard.paged_search is accessed as an attribute chain;
-    # modules should call conn.ldap_search() which goes through ADConnection, not this directly.
-    class _extend:
-        class standard:
-            @staticmethod
-            def paged_search(*args, **kwargs):
-                raise NotImplementedError
-    extend = _extend
+        attr_list = []
+        if attributes and attributes != ldap3.ALL_ATTRIBUTES:
+            attr_list = list(attributes) if not isinstance(attributes, list) else attributes
+
+        results = self._impl.search(
+            searchBase=search_base or None,
+            scope=scope,
+            searchFilter=search_filter,
+            attributes=attr_list or None,
+            searchControls=search_controls,
+        )
+
+        self.response = []
+        self.entries = []
+        for entry in results:
+            converted = _impacket_entry_to_ldap3(entry)
+            if converted:
+                self.response.append(converted)
+                self.entries.append(converted)
+        return True
+
+    @property
+    def extend(self):
+        return _ImpacketExtend(self)
+
+
+class _ImpacketExtend:
+    def __init__(self, shim):
+        self.standard = _ImpacketStandard(shim)
+
+
+class _ImpacketStandard:
+    def __init__(self, shim):
+        self._shim = shim
+
+    def paged_search(self, search_base="", search_filter="(objectClass=*)",
+                     search_scope=SUBTREE, attributes=None, paged_size=1000,
+                     controls=None, generator=False, **kwargs):
+        from impacket.ldap.ldapasn1 import Scope, SimplePagedResultsControl, CONTROL_PAGEDRESULTS
+
+        scope_map = {
+            SUBTREE: Scope("wholeSubtree"),
+            BASE: Scope("baseObject"),
+            "BASE": Scope("baseObject"),
+            "LEVEL": Scope("singleLevel"),
+        }
+        scope = scope_map.get(search_scope, Scope("wholeSubtree"))
+
+        search_controls = []
+        paged_control = SimplePagedResultsControl()
+        paged_control["size"] = paged_size
+        search_controls.append(paged_control)
+        if controls:
+            search_controls.extend(_build_impacket_control(c) for c in controls)
+
+        attr_list = []
+        if attributes and attributes != ldap3.ALL_ATTRIBUTES:
+            attr_list = list(attributes) if not isinstance(attributes, list) else attributes
+
+        results = self._shim._impl.search(
+            searchBase=search_base or None,
+            scope=scope,
+            searchFilter=search_filter,
+            attributes=attr_list or None,
+            searchControls=search_controls,
+        )
+
+        entries = []
+        for entry in results:
+            converted = _impacket_entry_to_ldap3(entry)
+            if converted:
+                entries.append(converted)
+
+        if generator:
+            return iter(entries)
+        return entries
+
+
+def _impacket_entry_to_ldap3(entry) -> dict | None:
+    """Convert an impacket SearchResultEntry ASN.1 object to ldap3-style dict."""
+    try:
+        from impacket.ldap.ldapasn1 import SearchResultEntry
+        if not isinstance(entry, SearchResultEntry):
+            return None
+
+        dn = str(entry["objectName"])
+        attributes = {}
+        for attr in entry["attributes"]:
+            attr_type = str(attr["type"])
+            vals = []
+            for val in attr["vals"]:
+                raw = bytes(val)
+                try:
+                    vals.append(raw.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    vals.append(raw)
+            if len(vals) == 1:
+                attributes[attr_type] = vals[0]
+            else:
+                attributes[attr_type] = vals
+        return {"type": "searchResEntry", "dn": dn, "attributes": attributes}
+    except Exception:
+        return None
+
+
+def _build_impacket_control(ldap3_control):
+    """Convert an ldap3-style control tuple to an impacket Control object."""
+    from impacket.ldap.ldapasn1 import Control
+    oid, criticality, value = ldap3_control
+    ctrl = Control()
+    ctrl["controlType"] = oid
+    ctrl["criticality"] = criticality
+    if value:
+        ctrl["controlValue"] = value
+    return ctrl
