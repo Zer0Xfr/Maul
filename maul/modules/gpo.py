@@ -198,7 +198,7 @@ class GPOModule(ModuleBase):
                 continue
 
             inf_path = f"{rel}\\MACHINE\\Microsoft\\Windows NT\\SecEdit\\GptTmpl.inf"
-            content = smb.read_file("SYSVOL", inf_path)
+            content = smb.read_file("SYSVOL", inf_path, silent=True)
             if not content:
                 continue
 

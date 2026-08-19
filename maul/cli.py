@@ -608,7 +608,7 @@ def _import_all_modules() -> None:
     import importlib
     for mod_name in (
         "domain", "creds", "delegation", "accounts",
-        "rights", "adcs", "gpo", "computer", "application",
+        "rights", "adcs", "gpo", "computer", "application", "coercion",
     ):
         try:
             importlib.import_module(f"maul.modules.{mod_name}")
@@ -699,6 +699,7 @@ Modules (use -M to select, default: all):
   gpo           GPO write access, local group membership via GPO
   computer      LAPS coverage, outdated OS, infrastructure servers
   application   Exchange, SCCM, SCOM detection
+  coercion      NTLM coercion (PrinterBug, PetitPotam, DFS), WebDAV, ZeroLogon, RBCD [active]
 
 Examples:
   maul enum -d ellingson.com -u e.belford -p 'Hack_The_Planet!' --dc 10.0.0.1

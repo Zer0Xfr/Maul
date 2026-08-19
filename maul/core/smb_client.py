@@ -47,14 +47,15 @@ class SMBClient:
             log.debug("SMB listPath %s\\%s: %s", share, path, exc)
             return []
 
-    def read_file(self, share: str, path: str) -> bytes | None:
+    def read_file(self, share: str, path: str, *, silent: bool = False) -> bytes | None:
         """Read a file from a share into memory.  Returns None on failure."""
         buf = BytesIO()
         try:
             self._smb.getFile(share, path, buf.write)
             return buf.getvalue()
         except Exception as exc:
-            log.debug("SMB getFile %s\\%s: %s", share, path, exc)
+            if not silent:
+                log.debug("SMB getFile %s\\%s: %s", share, path, exc)
             return None
 
     def shares(self) -> list[dict]:
