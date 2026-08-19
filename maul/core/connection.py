@@ -593,8 +593,7 @@ class _ImpacketStandard:
         scope = scope_map.get(search_scope, Scope("wholeSubtree"))
 
         search_controls = []
-        paged_control = SimplePagedResultsControl()
-        paged_control["size"] = paged_size
+        paged_control = SimplePagedResultsControl(size=paged_size)
         search_controls.append(paged_control)
         if controls:
             search_controls.extend(_build_impacket_control(c) for c in controls)
