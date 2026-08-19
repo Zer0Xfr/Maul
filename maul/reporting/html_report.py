@@ -11,19 +11,19 @@ from maul import __version__
 from maul.reporting.finding import Finding, Severity
 
 _SEV_COLOR = {
-    Severity.CRITICAL: "#c0392b",
-    Severity.HIGH:     "#e67e22",
-    Severity.MEDIUM:   "#f1c40f",
-    Severity.LOW:      "#2980b9",
-    Severity.INFO:     "#27ae60",
+    Severity.PWNED:    "#c0392b",
+    Severity.LIKELY:   "#e67e22",
+    Severity.POSSIBLE: "#f1c40f",
+    Severity.HARDENED: "#2980b9",
+    Severity.RECON:    "#27ae60",
 }
 
 _SEV_BG = {
-    Severity.CRITICAL: "#fdf0ef",
-    Severity.HIGH:     "#fef5ec",
-    Severity.MEDIUM:   "#fefde7",
-    Severity.LOW:      "#eaf4fb",
-    Severity.INFO:     "#eafaf1",
+    Severity.PWNED:    "#fdf0ef",
+    Severity.LIKELY:   "#fef5ec",
+    Severity.POSSIBLE: "#fefde7",
+    Severity.HARDENED: "#eaf4fb",
+    Severity.RECON:    "#eafaf1",
 }
 
 _TEMPLATE = """\

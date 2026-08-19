@@ -113,7 +113,7 @@ class RightsModule(ModuleBase):
         if not dcsync_capable:
             self.add_finding(
                 check="DCSync",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No non-DC DCSync rights found",
                 description="No unexpected principals have DS-Replication-Get-Changes-All on the domain object.",
             )
@@ -121,7 +121,7 @@ class RightsModule(ModuleBase):
 
         self.add_finding(
             check="DCSync",
-            severity=Severity.CRITICAL,
+            severity=Severity.PWNED,
             title=f"DCSync rights: {len(dcsync_capable)} non-DC principal(s)",
             description=(
                 "The following principals have both DS-Replication-Get-Changes and "
@@ -185,14 +185,14 @@ class RightsModule(ModuleBase):
         if not dangerous:
             self.add_finding(
                 check=f"ACL_{label.replace(' ', '')}",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title=f"{label}: no unexpected dangerous ACEs",
                 description=f"The DACL on {label} ({dn}) contains no unexpected write-level ACEs.",
             )
             return
 
         explicit = [d for d in dangerous if not d["inherited"]]
-        sev = Severity.CRITICAL if explicit else Severity.HIGH
+        sev = Severity.PWNED if explicit else Severity.LIKELY
 
         self.add_finding(
             check=f"ACL_{label.replace(' ', '')}",
@@ -250,7 +250,7 @@ class RightsModule(ModuleBase):
         if not ou_issues:
             self.add_finding(
                 check="OUPermissions",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No unexpected dangerous OU permissions",
                 description="No explicit dangerous ACEs found on Organizational Units.",
             )
@@ -258,7 +258,7 @@ class RightsModule(ModuleBase):
 
         self.add_finding(
             check="OUPermissions",
-            severity=Severity.HIGH,
+            severity=Severity.POSSIBLE,
             title=f"Dangerous OU permissions: {len(ou_issues)} ACE(s)",
             description=(
                 "Non-default principals have write-level rights on Organizational Units. "

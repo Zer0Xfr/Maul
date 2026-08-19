@@ -32,7 +32,7 @@ class GPOModule(ModuleBase):
         if not gpos:
             self.add_finding(
                 check="GPOPresent",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No Group Policy Objects found",
                 description="No GPO objects returned from LDAP.",
             )
@@ -40,7 +40,7 @@ class GPOModule(ModuleBase):
 
         self.add_finding(
             check="GPOPresent",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Group Policy Objects: {len(gpos)}",
             description=f"Found {len(gpos)} GPO(s) in the domain.",
         )
@@ -104,14 +104,14 @@ class GPOModule(ModuleBase):
         if not issues:
             self.add_finding(
                 check="GPOPermissions",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No unexpected GPO write permissions found",
                 description="All GPO DACLs appear to restrict write access to admin principals.",
             )
             return
 
         dc_gpos = _filter_dc_gpos(gpos, issues)
-        sev = Severity.CRITICAL if dc_gpos else Severity.HIGH
+        sev = Severity.PWNED if dc_gpos else Severity.LIKELY
 
         self.add_finding(
             check="GPOPermissions",
@@ -163,7 +163,7 @@ class GPOModule(ModuleBase):
         if links_info:
             self.add_finding(
                 check="GPOLinks",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title=f"GPO links: {len(links_info)} OU(s) with linked GPO(s)",
                 description="GPO link summary across OUs and domain.",
                 details={"links": [f"{l['ou']}: {', '.join(l['linked'])}" for l in links_info[:30]]},
@@ -209,7 +209,7 @@ class GPOModule(ModuleBase):
         if memberships:
             self.add_finding(
                 check="GPOLocalGroups",
-                severity=Severity.MEDIUM,
+                severity=Severity.POSSIBLE,
                 title=f"Local group membership configured via GPO: {len(memberships)} GPO(s)",
                 description=(
                     "Group Policy Security Templates define local group memberships on target machines. "

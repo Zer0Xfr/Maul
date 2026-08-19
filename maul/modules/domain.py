@@ -49,7 +49,7 @@ class DomainModule(ModuleBase):
 
         self.add_finding(
             check="DomainInfo",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Domain: {self.conn.domain}",
             description=f"Functional level: {fl_name}. {len(dc_names)} domain controller(s) found.",
             details={
@@ -64,7 +64,7 @@ class DomainModule(ModuleBase):
         if 0 <= fl < 5:  # below Windows Server 2012
             self.add_finding(
                 check="OldFunctionalLevel",
-                severity=Severity.MEDIUM,
+                severity=Severity.HARDENED,
                 title=f"Domain functional level is {fl_name}",
                 description=(
                     f"The domain functional level ({fl_name}) is below Windows Server 2012. "
@@ -106,7 +106,7 @@ class DomainModule(ModuleBase):
 
         self.add_finding(
             check="PasswordPolicy",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title="Default domain password policy",
             description="Password policy for the default domain.",
             details={
@@ -124,7 +124,7 @@ class DomainModule(ModuleBase):
         if min_len < 8:
             findings.append(self.add_finding(
                 check="WeakMinPasswordLength",
-                severity=Severity.HIGH,
+                severity=Severity.POSSIBLE,
                 title=f"Minimum password length is {min_len} characters",
                 description="The default policy allows very short passwords, enabling fast brute-force attacks.",
                 details={"min_password_length": min_len},
@@ -134,7 +134,7 @@ class DomainModule(ModuleBase):
         if lockout == 0:
             self.add_finding(
                 check="NoAccountLockout",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title="Account lockout is not configured",
                 description=(
                     "No lockout threshold is set. Attackers can perform unlimited password-guessing "
@@ -147,7 +147,7 @@ class DomainModule(ModuleBase):
         if not complexity:
             self.add_finding(
                 check="NoPasswordComplexity",
-                severity=Severity.MEDIUM,
+                severity=Severity.POSSIBLE,
                 title="Password complexity is not enforced",
                 description="Passwords are not required to contain mixed character types.",
             )
@@ -155,7 +155,7 @@ class DomainModule(ModuleBase):
         if max_age_days is None:
             self.add_finding(
                 check="PasswordsNeverExpire",
-                severity=Severity.LOW,
+                severity=Severity.HARDENED,
                 title="Default policy: passwords never expire",
                 description="No maximum password age is set — compromised credentials may go undetected indefinitely.",
             )
@@ -163,7 +163,7 @@ class DomainModule(ModuleBase):
         if reversible:
             self.add_finding(
                 check="ReversibleEncryption",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title="Passwords stored with reversible encryption",
                 description=(
                     "The 'Store passwords using reversible encryption' setting is enabled. "
@@ -200,7 +200,7 @@ class DomainModule(ModuleBase):
 
             self.add_finding(
                 check="FineGrainedPolicy",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title=f"Fine-grained password policy: {name}",
                 description=f"PSO {name!r} applies to {len(applies_to)} target(s).",
                 details={
@@ -215,7 +215,7 @@ class DomainModule(ModuleBase):
             if min_len < 8 or lockout == 0:
                 self.add_finding(
                     check="WeakFineGrainedPolicy",
-                    severity=Severity.MEDIUM,
+                    severity=Severity.POSSIBLE,
                     title=f"Fine-grained policy {name!r} has weak settings",
                     description=(
                         f"PSO {name!r} sets min length={min_len}, lockout={lockout}. "
@@ -241,7 +241,7 @@ class DomainModule(ModuleBase):
             trust_type = TRUST_TYPE.get(type_val, str(type_val))
             active_attrs = [lbl for bit, lbl in TRUST_ATTRIBUTES.items() if attrs_val & bit]
 
-            severity = Severity.INFO
+            severity = Severity.RECON
             notes: list[str] = []
 
             is_bidirectional = direction_val == 3
@@ -250,14 +250,14 @@ class DomainModule(ModuleBase):
             is_inbound = direction_val in (1, 3)
 
             if is_bidirectional and is_forest:
-                severity = Severity.MEDIUM
+                severity = Severity.POSSIBLE
                 notes.append(
                     "Bidirectional forest trust — compromise of the trusted forest enables "
                     "cross-forest privilege escalation."
                 )
 
             if is_inbound and not is_quarantined and not is_forest:
-                severity = Severity.MEDIUM
+                severity = Severity.POSSIBLE
                 notes.append(
                     "External trust without SID filtering (quarantine) — "
                     "SID history attacks may enable cross-domain privilege escalation."
@@ -285,7 +285,7 @@ class DomainModule(ModuleBase):
         if self.conn.use_ldaps:
             self.add_finding(
                 check="LDAPSEnabled",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="Connection uses LDAPS (port 636)",
                 description="LDAPS was used — channel encryption is in place. Verify LDAP channel binding is also enforced.",
             )
@@ -298,7 +298,7 @@ class DomainModule(ModuleBase):
         # We connected with NTLM on port 389 → unsigned bind was accepted
         self.add_finding(
             check="LDAPSigningNotRequired",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title="LDAP signing is not required on the domain controller",
             description=(
                 "The DC accepted an NTLM LDAP bind on port 389 without requiring message signing. "
@@ -325,7 +325,7 @@ class DomainModule(ModuleBase):
         if not signing_required:
             self.add_finding(
                 check="SMBSigningNotRequired",
-                severity=Severity.MEDIUM,
+                severity=Severity.POSSIBLE,
                 title="SMB signing is not required on the domain controller",
                 description=(
                     "The DC does not require SMB message signing. "
@@ -338,7 +338,7 @@ class DomainModule(ModuleBase):
         else:
             self.add_finding(
                 check="SMBSigningRequired",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="SMB signing is required on the domain controller",
                 description="The DC enforces SMB signing. Direct SMB relay to this DC is not possible.",
                 details={"dc": self.conn.dc, "signing_required": True},

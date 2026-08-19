@@ -87,9 +87,9 @@ class AccountsModule(ModuleBase):
             # Determine severity by group type
             rid = _group_rid(dn, domain_sid)
             if rid in _HIGH_PRIV_RIDS:
-                sev = Severity.CRITICAL if len(enabled) > 5 else Severity.HIGH
+                sev = Severity.POSSIBLE
             else:
-                sev = Severity.MEDIUM
+                sev = Severity.RECON
 
             self.add_finding(
                 check="PrivilegedGroupMembership",
@@ -127,7 +127,7 @@ class AccountsModule(ModuleBase):
 
         self.add_finding(
             check="AdminCountResidual",
-            severity=Severity.MEDIUM,
+            severity=Severity.RECON,
             title=f"adminCount=1: {len(entries)} enabled user(s)",
             description=(
                 "Users with adminCount=1 were previously (or currently) in a protected group "
@@ -170,7 +170,7 @@ class AccountsModule(ModuleBase):
         if privileged:
             self.add_finding(
                 check="SIDHistoryPrivileged",
-                severity=Severity.CRITICAL,
+                severity=Severity.PWNED,
                 title=f"SID history contains privileged SIDs: {len(privileged)} account(s)",
                 description=(
                     "Accounts with SID history entries matching privileged groups (Domain Admins, "
@@ -184,7 +184,7 @@ class AccountsModule(ModuleBase):
         if all_accounts:
             self.add_finding(
                 check="SIDHistory",
-                severity=Severity.LOW if not privileged else Severity.INFO,
+                severity=Severity.HARDENED if not privileged else Severity.RECON,
                 title=f"SID history set on {len(all_accounts)} account(s)",
                 description=(
                     f"{len(all_accounts)} account(s) have the sIDHistory attribute set. "
@@ -217,7 +217,7 @@ class AccountsModule(ModuleBase):
         if privileged:
             self.add_finding(
                 check="PrivilegedPasswordNeverExpires",
-                severity=Severity.HIGH,
+                severity=Severity.POSSIBLE,
                 title=f"Privileged accounts with non-expiring passwords: {len(privileged)}",
                 description=(
                     "Privileged accounts (adminCount=1) with non-expiring passwords are "
@@ -228,7 +228,7 @@ class AccountsModule(ModuleBase):
 
         self.add_finding(
             check="PasswordNeverExpires",
-            severity=Severity.LOW,
+            severity=Severity.HARDENED,
             title=f"Accounts with non-expiring passwords: {len(entries)}",
             description=(
                 f"{len(entries)} enabled user account(s) are configured with "
@@ -259,7 +259,7 @@ class AccountsModule(ModuleBase):
 
         self.add_finding(
             check="InactiveAccounts",
-            severity=Severity.LOW,
+            severity=Severity.HARDENED,
             title=f"Inactive accounts (>{days}d): {len(entries)}",
             description=(
                 f"{len(entries)} enabled user account(s) have not logged in for over {days} days "

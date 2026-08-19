@@ -79,7 +79,7 @@ class ADCSModule(ModuleBase):
         if not cas:
             self.add_finding(
                 check="ADCSPresent",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No Active Directory Certificate Services found",
                 description="No pKIEnrollmentService objects found in the Configuration NC.",
             )
@@ -87,7 +87,7 @@ class ADCSModule(ModuleBase):
 
         self.add_finding(
             check="ADCSPresent",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Active Directory Certificate Services: {len(cas)} CA(s)",
             description=f"Found {len(cas)} CA(s): {', '.join(c['name'] for c in cas)}",
             details={"cas": [c["name"] for c in cas]},
@@ -101,7 +101,8 @@ class ADCSModule(ModuleBase):
         for ca in cas:
             self._check_esc6(ca)
             self._check_esc7(ca)
-            self._check_esc8(ca)
+            if not self.options.get("opsec"):
+                self._check_esc8(ca)
             self._check_esc11(ca)
             self._check_esc12(ca)
             self._check_esc16(ca)
@@ -202,7 +203,7 @@ class ADCSModule(ModuleBase):
         if supplies_subject and has_auth_eku and enrollable_by_low_priv:
             self.add_finding(
                 check="ESC1",
-                severity=Severity.CRITICAL,
+                severity=Severity.PWNED,
                 title=f"ESC1: Enrollee-supplies-subject with auth EKU — {name}",
                 description=(
                     f"Template {name!r} allows the enrollee to specify a Subject Alternative Name (SAN) "
@@ -227,7 +228,7 @@ class ADCSModule(ModuleBase):
         if is_any_purpose and enrollable_by_low_priv and not supplies_subject:
             self.add_finding(
                 check="ESC2",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title=f"ESC2: Any-purpose / no-EKU template — {name}",
                 description=(
                     f"Template {name!r} has 'Any Purpose' EKU or no EKUs (SubCA behavior) "
@@ -243,7 +244,7 @@ class ADCSModule(ModuleBase):
         if _CERT_REQUEST_AGENT in all_ekus and enrollable_by_low_priv and ra_sigs == 0:
             self.add_finding(
                 check="ESC3",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title=f"ESC3: Certificate Request Agent template — {name}",
                 description=(
                     f"Template {name!r} issues Certificate Request Agent certificates "
@@ -263,7 +264,7 @@ class ADCSModule(ModuleBase):
         if no_sec_ext and has_auth_eku and enrollable_by_low_priv and not supplies_subject:
             self.add_finding(
                 check="ESC9",
-                severity=Severity.HIGH,
+                severity=Severity.POSSIBLE,
                 title=f"ESC9: No security extension on template — {name}",
                 description=(
                     f"Template {name!r} has CT_FLAG_NO_SECURITY_EXTENSION set "
@@ -290,7 +291,7 @@ class ADCSModule(ModuleBase):
         if no_sec_ext and has_auth_eku and enrollable_by_low_priv and not supplies_subject:
             self.add_finding(
                 check="ESC10",
-                severity=Severity.HIGH,
+                severity=Severity.POSSIBLE,
                 title=f"ESC10: Weak certificate mapping exploitable — {name}",
                 description=(
                     f"Template {name!r} has CT_FLAG_NO_SECURITY_EXTENSION set and issues auth "
@@ -327,7 +328,7 @@ class ADCSModule(ModuleBase):
                 and ra_sigs == 0):
             self.add_finding(
                 check="ESC15",
-                severity=Severity.HIGH,
+                severity=Severity.POSSIBLE,
                 title=f"ESC15: Schema Version 1 template enrollable by low-priv users — {name}",
                 description=(
                     f"Template {name!r} uses Schema Version 1 (msPKI-Template-Schema-Version=1), "
@@ -375,7 +376,7 @@ class ADCSModule(ModuleBase):
 
         self.add_finding(
             check="ESC4",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title=f"ESC4: Write rights on certificate template — {name}",
             description=(
                 f"Non-admin principals have write-level rights on template {name!r}. "
@@ -418,7 +419,7 @@ class ADCSModule(ModuleBase):
 
         self.add_finding(
             check="ESC7",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title=f"ESC7: Dangerous rights on CA object — {ca['name']}",
             description=(
                 f"Non-admin principals have write-level rights on CA {ca['name']!r}. "
@@ -441,7 +442,7 @@ class ADCSModule(ModuleBase):
         """ESC6: EDITF_ATTRIBUTESUBJECTALTNAME2 flag on CA — requires RPC check, noted as manual."""
         self.add_finding(
             check="ESC6",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"ESC6: Manual verification required for CA {ca['name']}",
             description=(
                 f"CA {ca['name']!r} should be checked for EDITF_ATTRIBUTESUBJECTALTNAME2. "
@@ -476,7 +477,7 @@ class ADCSModule(ModuleBase):
 
             self.add_finding(
                 check="ESC8",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title=f"ESC8: HTTP enrollment endpoint active — {ca['name']}",
                 description=(
                     f"The CA web enrollment service is accessible at {url} (HTTP {status}). "
@@ -503,7 +504,7 @@ class ADCSModule(ModuleBase):
 
         self.add_finding(
             check="ESC11",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title=f"ESC11: CA does not enforce encrypted RPC enrollment — {ca['name']}",
             description=(
                 f"CA {ca['name']!r} does not have IF_ENFORCEENCRYPTICERTREQUEST (0x200) set "
@@ -566,7 +567,7 @@ class ADCSModule(ModuleBase):
             if _is_privileged_group_dn(grp, self.conn)
         ]
 
-        sev = Severity.CRITICAL if privileged_groups else Severity.HIGH
+        sev = Severity.PWNED if privileged_groups else Severity.LIKELY
         title_suffix = "privileged group" if privileged_groups else "AD group"
 
         self.add_finding(
@@ -651,7 +652,7 @@ class ADCSModule(ModuleBase):
 
         self.add_finding(
             check="ESC14",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title=f"ESC14: Write access to certificate mapping attributes on {len(dangerous)} privileged account(s)",
             description=(
                 "Non-admin principals have WriteProperty rights on altSecurityIdentities or "
@@ -677,7 +678,7 @@ class ADCSModule(ModuleBase):
         """ESC16: CA-level szOID_NTDS_CA_SECURITY_EXT suppression — manual verification required."""
         self.add_finding(
             check="ESC16",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"ESC16: Manual verification required for CA {ca['name']}",
             description=(
                 f"CA {ca['name']!r} should be checked for CA-level suppression of the "

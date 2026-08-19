@@ -2,9 +2,9 @@
 from maul.reporting.finding import Severity
 
 SEVERITY_COLOR: dict[Severity, str] = {
-    Severity.CRITICAL: "bold red",
-    Severity.HIGH: "red",
-    Severity.MEDIUM: "yellow",
-    Severity.LOW: "cyan",
-    Severity.INFO: "white",
+    Severity.PWNED: "bold red",
+    Severity.LIKELY: "red",
+    Severity.POSSIBLE: "yellow",
+    Severity.HARDENED: "cyan",
+    Severity.RECON: "dim white",
 }

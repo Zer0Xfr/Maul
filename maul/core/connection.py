@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import logging
-import sys
-import traceback
 from functools import cached_property
 from typing import Any
 
 import ldap3
 from ldap3 import NTLM, SASL, KERBEROS, SUBTREE, BASE, ALL_ATTRIBUTES
-from rich.console import Console as _Console
 
 from maul.core.ldap_client import (
     paged_search,
@@ -81,62 +78,59 @@ class ADConnection:
     # ── connection lifecycle ─────────────────────────────────────────────────
 
     def connect(self) -> None:
-        """Establish the LDAP session and cache domain info from rootDSE."""
-        _err = _Console(stderr=True)
+        """Establish the LDAP session and cache domain info from rootDSE.
 
+        Raises:
+            ConnectionError: network/TLS failure
+            AuthError: credential or channel-binding failure
+        """
         if not self.dc:
-            try:
-                self.dc = self._discover_dc()
-            except ConnectionError as exc:
-                _err.print(f"[bold red][!][/bold red] {exc}")
-                sys.exit(1)
+            self.dc = self._discover_dc()
 
-        port = 636 if self.use_ldaps else 389
         log.debug("Connecting to %s (%s)", self.dc, "LDAPS" if self.use_ldaps else "LDAP")
+
         try:
             self._ldap_conn = self._create_ldap_connection()
-        except ldap3.core.exceptions.LDAPSocketOpenError:
+        except ldap3.core.exceptions.LDAPSocketOpenError as exc:
             proto = "LDAPS (636)" if self.use_ldaps else "LDAP (389)"
-            _err.print(f"[bold red][!][/bold red] Cannot reach {self.dc}:{port} — verify the DC IP and that {proto} is open")
-            sys.exit(1)
-        except ldap3.core.exceptions.LDAPStartTLSError:
-            _err.print("[bold red][!][/bold red] STARTTLS failed — try using --ldaps for SSL or plain LDAP without TLS")
-            sys.exit(1)
+            raise ConnectionError(
+                f"Cannot reach {self.dc} on {proto} — verify the DC IP and that the port is open"
+            ) from exc
+        except ldap3.core.exceptions.LDAPStartTLSError as exc:
+            raise ConnectionError(
+                "STARTTLS failed — try using --ldaps for SSL or plain LDAP without TLS"
+            ) from exc
         except (ldap3.core.exceptions.LDAPBindError, AuthError) as exc:
             detail = str(exc).lower()
             if "strongerauthrequ" in detail or "stronger" in detail:
-                _err.print(
-                    f"[bold red][!][/bold red] DC requires a secure channel for LDAP auth "
-                    f"(strongerAuthRequired) — retry with [bold]--ldaps[/bold]"
-                )
-            else:
-                _err.print(f"[bold red][!][/bold red] Authentication failed for {self.username}@{self.domain} — check credentials and that the user exists in this domain")
-            log.debug("Bind error detail: %s", exc)
-            sys.exit(1)
+                raise AuthError(
+                    "DC requires a secure channel for LDAP auth (strongerAuthRequired) — retry with --ldaps"
+                ) from exc
+            raise AuthError(
+                f"Authentication failed for {self.username}@{self.domain} — check credentials"
+            ) from exc
         except Exception as exc:
             detail = str(exc).lower()
             if "invalidcredentials" in detail or "52e" in detail:
-                _err.print(f"[bold red][!][/bold red] Authentication failed for {self.username}@{self.domain} — check credentials")
-            elif "strongerauthrequ" in detail or "stronger" in detail:
-                _err.print(
-                    f"[bold red][!][/bold red] DC requires a secure channel for LDAP auth "
-                    f"(strongerAuthRequired) — retry with [bold]--ldaps[/bold]"
-                )
-            else:
-                _err.print(f"[bold red][!][/bold red] Connection failed: {exc}")
-            if log.isEnabledFor(logging.DEBUG):
-                _err.print(traceback.format_exc())
-            sys.exit(1)
+                raise AuthError(
+                    f"Authentication failed for {self.username}@{self.domain} — check credentials"
+                ) from exc
+            if "strongerauthrequ" in detail or "stronger" in detail:
+                raise AuthError(
+                    "DC requires a secure channel (strongerAuthRequired) — retry with --ldaps"
+                ) from exc
+            raise ConnectionError(f"Connection failed: {exc}") from exc
 
         self._rootdse = query_rootdse(self._ldap_conn)
         log.debug("Connected. Root DN: %s", self.root_dn)
 
-        # Warn if the DC serves a different domain than requested
         dc_dn = get_attr_first(self._rootdse, "defaultNamingContext")
         expected_dn = domain_to_dn(self.domain)
         if dc_dn and dc_dn.lower() != expected_dn.lower():
-            _err.print(f"[bold yellow][!][/bold yellow] Warning: DC {self.dc} serves '{dc_dn}' but you specified domain '{self.domain}' ({expected_dn})")
-            _err.print("[bold yellow][!][/bold yellow] You may be connecting to the wrong domain controller")
+            log.warning(
+                "DC %s serves '%s' but you specified domain '%s' (%s) — possible domain mismatch",
+                self.dc, dc_dn, self.domain, expected_dn,
+            )
 
     def disconnect(self) -> None:
         if self._ldap_conn and self._ldap_conn.bound:
@@ -437,23 +431,26 @@ class ADConnection:
         except ImportError:
             raise AuthError("certipy-ad is required for PKINIT authentication")
 
+        import atexit
         import os
         import tempfile
 
         tgt = get_tgt_from_pfx(self.pfx, self.pfx_pass, self.domain, self.username, self.kdchost or self.dc)
-        # Write ccache to a temp file and set KRB5CCNAME
-        ccache_file = tempfile.mktemp(suffix=".ccache")
+        fd, ccache_file = tempfile.mkstemp(suffix=".ccache")
+        os.close(fd)
         tgt.saveFile(ccache_file)
+        os.chmod(ccache_file, 0o600)
         os.environ["KRB5CCNAME"] = ccache_file
+        atexit.register(lambda: os.unlink(ccache_file) if os.path.exists(ccache_file) else None)
         return self._connect_kerberos(server)
 
     def _connect_pass_the_cert(self, server: ldap3.Server) -> ldap3.Connection:
         """LDAPS with client certificate (Schannel / Pass-the-Cert)."""
+        import atexit
         import ssl
         import tempfile
         import os
 
-        # Extract cert + key from PFX to temporary PEM files
         try:
             from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
             pfx_data = open(self.pfx, "rb").read()
@@ -463,12 +460,17 @@ class ADConnection:
             cert_pem = certificate.public_bytes(Encoding.PEM)
             key_pem = private_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
 
-            cert_file = tempfile.mktemp(suffix=".crt")
-            key_file = tempfile.mktemp(suffix=".key")
+            fd, cert_file = tempfile.mkstemp(suffix=".crt")
+            os.close(fd)
+            fd, key_file = tempfile.mkstemp(suffix=".key")
+            os.close(fd)
             with open(cert_file, "wb") as f:
                 f.write(cert_pem)
             with open(key_file, "wb") as f:
                 f.write(key_pem)
+            os.chmod(key_file, 0o600)
+            atexit.register(lambda: os.unlink(cert_file) if os.path.exists(cert_file) else None)
+            atexit.register(lambda: os.unlink(key_file) if os.path.exists(key_file) else None)
         except ImportError:
             raise AuthError("cryptography package is required for Pass-the-Cert authentication")
 

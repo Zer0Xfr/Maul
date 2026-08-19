@@ -9,11 +9,11 @@ from maul import __version__
 from maul.reporting.finding import Finding, Severity
 
 _SEV_LABEL = {
-    Severity.CRITICAL: "[CRITICAL]",
-    Severity.HIGH:     "[HIGH    ]",
-    Severity.MEDIUM:   "[MEDIUM  ]",
-    Severity.LOW:      "[LOW     ]",
-    Severity.INFO:     "[INFO    ]",
+    Severity.PWNED:    "[PWNED   ]",
+    Severity.LIKELY:   "[LIKELY  ]",
+    Severity.POSSIBLE: "[POSSIBLE]",
+    Severity.HARDENED: "[HARDENED]",
+    Severity.RECON:    "[RECON   ]",
 }
 
 _LINE = "=" * 80

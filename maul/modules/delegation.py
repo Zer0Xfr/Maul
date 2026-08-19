@@ -54,7 +54,7 @@ class DelegationModule(ModuleBase):
         if not all_objects:
             self.add_finding(
                 check="UnconstrainedDelegation",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No unconstrained delegation configured",
                 description="No non-DC computers or user accounts have TRUSTED_FOR_DELEGATION set.",
             )
@@ -71,7 +71,7 @@ class DelegationModule(ModuleBase):
 
         self.add_finding(
             check="UnconstrainedDelegation",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title=f"Unconstrained delegation: {len(all_objects)} object(s)",
             description=(
                 "Objects with unconstrained delegation capture a copy of any user's TGT when that "
@@ -103,7 +103,7 @@ class DelegationModule(ModuleBase):
         if not entries:
             self.add_finding(
                 check="ConstrainedDelegation",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No constrained delegation configured",
                 description="No objects have msDS-AllowedToDelegateTo set.",
             )
@@ -119,7 +119,7 @@ class DelegationModule(ModuleBase):
             # TRUSTED_TO_AUTH_FOR_DELEGATION = 0x1000000 → protocol transition (any user can be impersonated)
             has_protocol_transition = bool(uac & 0x1000000)
 
-            severity = Severity.HIGH if has_protocol_transition else Severity.MEDIUM
+            severity = Severity.LIKELY if has_protocol_transition else Severity.POSSIBLE
             proto_note = " WITH protocol transition (any user can be impersonated)" if has_protocol_transition else ""
 
             self.add_finding(
@@ -158,7 +158,7 @@ class DelegationModule(ModuleBase):
         if not entries:
             self.add_finding(
                 check="RBCD",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No RBCD configured",
                 description="No objects have msDS-AllowedToActOnBehalfOfOtherIdentity set.",
             )
@@ -171,7 +171,7 @@ class DelegationModule(ModuleBase):
 
         self.add_finding(
             check="RBCD",
-            severity=Severity.MEDIUM,
+            severity=Severity.POSSIBLE,
             title=f"Resource-Based Constrained Delegation: {len(entries)} object(s)",
             description=(
                 f"{len(entries)} object(s) have msDS-AllowedToActOnBehalfOfOtherIdentity set. "

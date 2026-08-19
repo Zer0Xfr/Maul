@@ -10,19 +10,19 @@ from maul.reporting.finding import Finding, Severity
 console = Console(highlight=False)
 
 _SEVERITY_STYLE: dict[Severity, str] = {
-    Severity.CRITICAL: "bold red",
-    Severity.HIGH: "red",
-    Severity.MEDIUM: "yellow",
-    Severity.LOW: "cyan",
-    Severity.INFO: "white",
+    Severity.PWNED: "bold red",
+    Severity.LIKELY: "red",
+    Severity.POSSIBLE: "yellow",
+    Severity.HARDENED: "cyan",
+    Severity.RECON: "dim white",
 }
 
 _SEVERITY_LABEL: dict[Severity, str] = {
-    Severity.CRITICAL: "CRIT",
-    Severity.HIGH: "HIGH",
-    Severity.MEDIUM: " MED",
-    Severity.LOW: " LOW",
-    Severity.INFO: "INFO",
+    Severity.PWNED: " PWN",
+    Severity.LIKELY: " LKY",
+    Severity.POSSIBLE: " PSB",
+    Severity.HARDENED: " HRD",
+    Severity.RECON: " RCN",
 }
 
 _BANNER = """\

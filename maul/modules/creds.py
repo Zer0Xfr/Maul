@@ -69,7 +69,7 @@ class CredsModule(ModuleBase):
         if not entries:
             self.add_finding(
                 check="Kerberoast",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No Kerberoastable accounts",
                 description="No enabled user accounts have a ServicePrincipalName set.",
             )
@@ -104,7 +104,7 @@ class CredsModule(ModuleBase):
         if rc4_accounts:
             self.add_finding(
                 check="Kerberoast",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title=f"Kerberoastable accounts (RC4): {len(rc4_accounts)}",
                 description=(
                     f"{len(rc4_accounts)} account(s) are Kerberoastable with RC4 encryption. "
@@ -128,7 +128,7 @@ class CredsModule(ModuleBase):
         if aes_only_accounts:
             self.add_finding(
                 check="KerberoastAES",
-                severity=Severity.MEDIUM,
+                severity=Severity.POSSIBLE,
                 title=f"Kerberoastable accounts (AES-only): {len(aes_only_accounts)}",
                 description=(
                     f"{len(aes_only_accounts)} account(s) are Kerberoastable but only support AES. "
@@ -155,7 +155,7 @@ class CredsModule(ModuleBase):
         if not entries:
             self.add_finding(
                 check="ASREPRoast",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No AS-REP roastable accounts",
                 description="No enabled user accounts have DONT_REQUIRE_PREAUTH set.",
             )
@@ -171,7 +171,7 @@ class CredsModule(ModuleBase):
             if _int(get_attr_first(e, "adminCount")) == 1
         ]
 
-        sev = Severity.CRITICAL if privileged else Severity.HIGH
+        sev = Severity.PWNED if privileged else Severity.LIKELY
 
         self.add_finding(
             check="ASREPRoast",
@@ -200,7 +200,7 @@ class CredsModule(ModuleBase):
             log.debug("SMB unavailable for SYSVOL scan: %s", exc)
             self.add_finding(
                 check="SYSVOLScan",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="SYSVOL scan skipped — SMB unavailable",
                 description=f"Could not establish SMB connection for SYSVOL credential scan: {exc}",
             )
@@ -243,7 +243,7 @@ class CredsModule(ModuleBase):
 
             self.add_finding(
                 check="GPPCredentials",
-                severity=Severity.CRITICAL,
+                severity=Severity.PWNED,
                 title=f"GPP credentials found in SYSVOL: {len(gpp_findings)} item(s)",
                 description=(
                     "Group Policy Preferences (GPP) stored credentials were found in SYSVOL. "
@@ -267,7 +267,7 @@ class CredsModule(ModuleBase):
         if script_findings:
             self.add_finding(
                 check="SYSVOLScriptCredentials",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title=f"Potential credentials in SYSVOL scripts: {len(script_findings)} match(es)",
                 description=(
                     "Script files in SYSVOL contain patterns that may indicate embedded credentials. "
@@ -285,7 +285,7 @@ class CredsModule(ModuleBase):
         if not gpp_findings and not script_findings:
             self.add_finding(
                 check="SYSVOLScan",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No credentials found in SYSVOL",
                 description="SYSVOL was scanned — no GPP cpassword entries or script credentials found.",
             )
@@ -307,7 +307,7 @@ class CredsModule(ModuleBase):
 
         self.add_finding(
             check="UnixPasswordAttributes",
-            severity=Severity.HIGH,
+            severity=Severity.LIKELY,
             title=f"Unix/legacy password attributes set: {len(entries)} account(s)",
             description=(
                 "AD accounts with unixUserPassword, userPassword, or msSFU30Password set "
@@ -335,7 +335,7 @@ class CredsModule(ModuleBase):
 
         self.add_finding(
             check="gMSAAccounts",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Group Managed Service Accounts: {len(entries)}",
             description=(
                 f"{len(entries)} gMSA(s) found. "

@@ -5,11 +5,11 @@ from enum import Enum
 
 
 class Severity(Enum):
-    CRITICAL = 5
-    HIGH = 4
-    MEDIUM = 3
-    LOW = 2
-    INFO = 1
+    PWNED = 5
+    LIKELY = 4
+    POSSIBLE = 3
+    HARDENED = 2
+    RECON = 1
 
     def __lt__(self, other: "Severity") -> bool:
         return self.value < other.value

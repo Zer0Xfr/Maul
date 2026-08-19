@@ -84,15 +84,15 @@ def _cmd_enum(args: argparse.Namespace) -> int:
     print_banner()
 
     # ── resolve min-severity ──────────────────────────────────────────────────
-    min_sev_name = getattr(args, "min_severity", "info").upper()
+    min_sev_name = getattr(args, "min_severity", "recon").upper()
     try:
         min_sev = Severity[min_sev_name]
     except KeyError:
-        min_sev = Severity.INFO
+        min_sev = Severity.RECON
 
-    # Default: hide INFO unless verbose
-    if not getattr(args, "verbose", False) and min_sev == Severity.INFO:
-        min_sev = Severity.LOW
+    # Default: hide RECON unless verbose
+    if not getattr(args, "verbose", False) and min_sev == Severity.RECON:
+        min_sev = Severity.HARDENED
 
     module_names: list[str] | None = None
     if args.modules:
@@ -156,7 +156,7 @@ def _cmd_enum(args: argparse.Namespace) -> int:
 
         for mod_cls in module_classes:
             progress.update(task, description=f"[cyan]{mod_cls.name}[/]")
-            mod = mod_cls(conn)
+            mod = mod_cls(conn, options={"opsec": args.opsec})
             t0  = time.monotonic()
             try:
                 findings = mod.run()
@@ -203,9 +203,9 @@ def _cmd_enum(args: argparse.Namespace) -> int:
 
     conn.disconnect()
 
-    # Exit 1 if critical/high findings, 0 otherwise
-    has_high = any(f.severity >= Severity.HIGH for f in all_findings)
-    return 1 if has_high else 0
+    # Exit 1 if pwned/likely findings, 0 otherwise
+    has_exploitable = any(f.severity >= Severity.LIKELY for f in all_findings)
+    return 1 if has_exploitable else 0
 
 
 def _write_reports(findings: list, base: str, fmt: str, *, domain: str = "") -> None:
@@ -641,14 +641,27 @@ def _resolve_target_dn(conn, target: str) -> str | None:
     from maul.core.ldap_client import get_attr_first
     if target.upper().startswith("CN=") or "DC=" in target.upper():
         return target  # already a DN
-    sam = target.split("@")[0]
+    sam = _ldap_escape(target.split("@")[0])
+    upn = _ldap_escape(target)
     entries = conn.ldap_search(
-        f"(|(sAMAccountName={sam})(userPrincipalName={target}))",
+        f"(|(sAMAccountName={sam})(userPrincipalName={upn}))",
         attributes=["distinguishedName"],
     )
     if entries:
         return str(get_attr_first(entries[0], "distinguishedName") or entries[0].get("dn", ""))
     return None
+
+
+def _ldap_escape(value: str) -> str:
+    """Escape special characters for safe LDAP filter interpolation (RFC 4515)."""
+    return (
+        value
+        .replace("\\", "\\5c")
+        .replace("*", "\\2a")
+        .replace("(", "\\28")
+        .replace(")", "\\29")
+        .replace("\x00", "\\00")
+    )
 
 
 _MODULE_NAMES = frozenset({
@@ -702,10 +715,10 @@ Examples:
     scan.add_argument("--opsec", action="store_true", help="Skip active/noisy checks")
     scan.add_argument("--timeout", metavar="SEC", type=int, default=30,
                       help="LDAP/SMB connection timeout in seconds (default: 30)")
-    scan.add_argument("--min-severity", metavar="LEVEL", default="info",
-                      choices=["critical", "high", "medium", "low", "info"],
+    scan.add_argument("--min-severity", metavar="LEVEL", default="recon",
+                      choices=["pwned", "likely", "possible", "hardened", "recon"],
                       dest="min_severity",
-                      help="Minimum severity to display (default: low, info with -v)")
+                      help="Minimum severity to display (default: hardened, recon with -v)")
     scan.add_argument("-L", "--list-modules", action="store_true", dest="list_modules",
                       help="List available modules and exit")
     enum_p.set_defaults(func=_cmd_enum)

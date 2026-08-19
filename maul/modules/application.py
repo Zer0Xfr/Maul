@@ -50,7 +50,7 @@ class ApplicationModule(ModuleBase):
         if not exchange_servers:
             self.add_finding(
                 check="Exchange",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No Exchange servers detected",
                 description="No Exchange enrollment service or server objects found in AD.",
             )
@@ -61,7 +61,7 @@ class ApplicationModule(ModuleBase):
 
         self.add_finding(
             check="Exchange",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Exchange servers detected: {len(exchange_servers)}",
             description="Microsoft Exchange server(s) found in the domain.",
             details={
@@ -152,7 +152,7 @@ class ApplicationModule(ModuleBase):
         if ewp_has_writedac:
             self.add_finding(
                 check="PrivExchange",
-                severity=Severity.HIGH,
+                severity=Severity.LIKELY,
                 title="PrivExchange: Exchange Windows Permissions has WriteDACL on domain",
                 description=(
                     "The 'Exchange Windows Permissions' group has WriteDACL on the domain object. "
@@ -173,7 +173,7 @@ class ApplicationModule(ModuleBase):
         else:
             self.add_finding(
                 check="PrivExchange",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="PrivExchange: Exchange Windows Permissions does not have WriteDACL on domain",
                 description=(
                     "The Exchange Windows Permissions group does not appear to have WriteDACL "
@@ -188,7 +188,7 @@ class ApplicationModule(ModuleBase):
         if not sccm_found:
             self.add_finding(
                 check="SCCM",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No SCCM/ConfigMgr deployment detected",
                 description="No SCCM schema attributes or management point objects found in AD.",
             )
@@ -199,7 +199,7 @@ class ApplicationModule(ModuleBase):
 
         self.add_finding(
             check="SCCM",
-            severity=Severity.MEDIUM,
+            severity=Severity.POSSIBLE,
             title=f"SCCM/ConfigMgr detected: {len(sites)} site(s), {len(mps)} management point(s)",
             description=(
                 "Microsoft System Center Configuration Manager (SCCM/ConfigMgr) is deployed. "
@@ -223,11 +223,14 @@ class ApplicationModule(ModuleBase):
 
         # Check System Management container in AD
         sm_container = f"CN=System Management,CN=System,{self.conn.root_dn}"
-        entries = self.conn.ldap_search(
-            "(objectClass=mSSMSSite)",
-            attributes=["cn", "mSSMSSiteCode", "mSSMSDefaultMP"],
-            base=sm_container,
-        )
+        try:
+            entries = self.conn.ldap_search(
+                "(objectClass=mSSMSSite)",
+                attributes=["cn", "mSSMSSiteCode", "mSSMSDefaultMP"],
+                base=sm_container,
+            )
+        except Exception:
+            entries = []
         for e in entries:
             site_code = str(get_attr_first(e, "mSSMSSiteCode") or get_attr_first(e, "cn") or "?")
             mp        = str(get_attr_first(e, "mSSMSDefaultMP") or "")
@@ -285,7 +288,7 @@ class ApplicationModule(ModuleBase):
 
         self.add_finding(
             check="ADFS",
-            severity=Severity.MEDIUM,
+            severity=Severity.POSSIBLE,
             title="AD FS deployment detected",
             description=(
                 "Active Directory Federation Services (AD FS) is deployed. "

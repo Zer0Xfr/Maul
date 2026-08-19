@@ -48,7 +48,7 @@ class ComputerModule(ModuleBase):
         if not computers:
             self.add_finding(
                 check="ComputerPresent",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No computer objects found",
                 description="No computer objects returned from LDAP.",
             )
@@ -56,7 +56,7 @@ class ComputerModule(ModuleBase):
 
         self.add_finding(
             check="ComputerPresent",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Computer objects: {len(computers)}",
             description=f"Found {len(computers)} computer object(s) in the domain.",
         )
@@ -92,7 +92,7 @@ class ComputerModule(ModuleBase):
         if not laps_schema_present:
             self.add_finding(
                 check="LAPS",
-                severity=Severity.HIGH,
+                severity=Severity.POSSIBLE,
                 title="LAPS not deployed (schema attributes absent)",
                 description=(
                     "Neither legacy LAPS (ms-Mcs-AdmPwd) nor Windows LAPS (msLAPS-Password) "
@@ -136,12 +136,12 @@ class ComputerModule(ModuleBase):
         if laps_covered == total:
             self.add_finding(
                 check="LAPS",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title=f"LAPS deployed: {laps_covered}/{total} computers covered (100%)",
                 description="All enabled computer accounts have LAPS password attributes populated.",
             )
         else:
-            sev = Severity.HIGH if coverage_pct < 50 else Severity.MEDIUM
+            sev = Severity.POSSIBLE if coverage_pct < 50 else Severity.POSSIBLE
             self.add_finding(
                 check="LAPS",
                 severity=sev,
@@ -192,7 +192,7 @@ class ComputerModule(ModuleBase):
         if not eol_found:
             self.add_finding(
                 check="OutdatedOS",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title="No end-of-life operating systems detected",
                 description="All computer objects report a supported operating system.",
             )
@@ -201,7 +201,7 @@ class ComputerModule(ModuleBase):
         total_eol = sum(len(v) for v in eol_found.values())
         # Any EOL server OS is HIGH; EOL workstations are MEDIUM
         server_eol = [k for k in eol_found if "Server" in k]
-        sev = Severity.HIGH if server_eol else Severity.MEDIUM
+        sev = Severity.POSSIBLE if server_eol else Severity.POSSIBLE
 
         self.add_finding(
             check="OutdatedOS",
@@ -240,7 +240,7 @@ class ComputerModule(ModuleBase):
 
         self.add_finding(
             check="InfrastructureServers",
-            severity=Severity.INFO,
+            severity=Severity.RECON,
             title=f"Infrastructure servers discovered: {sum(len(v) for v in infra.values())} host(s)",
             description="Infrastructure servers identified via SPN enumeration.",
             details={
@@ -280,7 +280,7 @@ class ComputerModule(ModuleBase):
         if not stale:
             self.add_finding(
                 check="StaleComputers",
-                severity=Severity.INFO,
+                severity=Severity.RECON,
                 title=f"No stale computer accounts (>{cutoff_days} days inactive)",
                 description=f"All enabled computers have logged in within the last {cutoff_days} days.",
             )
@@ -288,7 +288,7 @@ class ComputerModule(ModuleBase):
 
         self.add_finding(
             check="StaleComputers",
-            severity=Severity.LOW,
+            severity=Severity.HARDENED,
             title=f"Stale computer accounts: {len(stale)} (>{cutoff_days} days inactive)",
             description=(
                 f"{len(stale)} enabled computer account(s) have not authenticated in over "
