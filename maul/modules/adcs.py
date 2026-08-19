@@ -407,9 +407,11 @@ class ADCSModule(ModuleBase):
             return
 
         skip = _admin_sids(self.conn)
+        # Also skip the CA host's own machine account — it legitimately has full control
+        ca_host_sids = self._get_ca_host_sids(ca)
         manage_aces = []
         for ace in sd.allow_aces():
-            if ace.sid in skip or ace.is_inherited:
+            if ace.sid in skip or ace.sid in ca_host_sids or ace.is_inherited:
                 continue
             if ace.mask & (MASK_GENERIC_ALL | MASK_DANGEROUS):
                 manage_aces.append(ace)
@@ -497,31 +499,30 @@ class ADCSModule(ModuleBase):
     # ── ESC11: CA does not enforce RPC encryption ─────────────────────────────
 
     def _check_esc11(self, ca: dict) -> None:
-        """ESC11: IF_ENFORCEENCRYPTICERTREQUEST not set — NTLM relay to RPC enrollment."""
-        ca_flags = ca.get("flags", 0)
-        if ca_flags & _IF_ENFORCEENCRYPTICERTREQUEST:
-            return  # encryption enforced — not vulnerable
-
+        """ESC11: IF_ENFORCEENCRYPTICERTREQUEST — requires RPC to confirm, noted as manual."""
         self.add_finding(
             check="ESC11",
-            severity=Severity.LIKELY,
-            title=f"ESC11: CA does not enforce encrypted RPC enrollment — {ca['name']}",
+            severity=Severity.RECON,
+            title=f"ESC11: Manual verification required for CA {ca['name']}",
             description=(
-                f"CA {ca['name']!r} does not have IF_ENFORCEENCRYPTICERTREQUEST (0x200) set "
-                "in its flags. The ICertPassage Remote (ICPR) RPC interface accepts unencrypted "
-                "enrollment requests. An attacker can relay NTLM authentication to the CA's RPC "
-                "enrollment endpoint — similar to ESC8 but targeting RPC (port 135/dynamic) "
-                "instead of HTTP. Coerce authentication via PrinterBug, PetitPotam, etc., then "
-                "relay to ICPR to obtain a certificate for the coerced machine account."
+                f"CA {ca['name']!r} should be checked for IF_ENFORCEENCRYPTICERTREQUEST. "
+                "If NOT set, the ICertPassage Remote (ICPR) RPC interface accepts unencrypted "
+                "enrollment requests, enabling NTLM relay to the CA's RPC endpoint. "
+                "This flag cannot be reliably determined via LDAP — it requires RPC access "
+                "to the CA (ICertAdminD::GetCAProperty). "
+                "Verify with: certutil -v -config "
+                f"'{ca['dns_host']}\\\\{ca['name']}' -getreg CA\\\\InterfaceFlags"
             ),
             details={
                 "ca": ca["name"],
                 "ca_host": ca["dns_host"],
-                "ca_flags": hex(ca_flags),
-                "missing_flag": "IF_ENFORCEENCRYPTICERTREQUEST (0x200)",
+                "check_command": (
+                    f"certutil -v -config '{ca['dns_host']}\\{ca['name']}' "
+                    "-getreg CA\\InterfaceFlags"
+                ),
+                "flag_to_check": "IF_ENFORCEENCRYPTICERTREQUEST (0x200)",
             },
             references=[
-                "https://posts.specterops.io/certified-pre-owned-d95910965cd2",
                 "https://blog.compass-security.com/2022/11/relaying-to-ad-certificate-services-over-rpc/",
             ],
         )
@@ -706,6 +707,30 @@ class ADCSModule(ModuleBase):
                 "https://research.ifcr.dk/certipy-4-0-esc9-esc10-bloodhound-gui-new-authentication-and-request-methods-and-more-7237d88061f7",
             ],
         )
+
+    # ── helpers ────────────────────────────────────────────────────────────────
+
+    def _get_ca_host_sids(self, ca: dict) -> set[str]:
+        """Return SIDs for the CA's host machine account (to exclude from ACL checks)."""
+        host = ca.get("dns_host", "")
+        if not host:
+            return set()
+        sam = host.split(".")[0] + "$"
+        try:
+            entries = self.conn.ldap_search(
+                f"(sAMAccountName={sam})",
+                attributes=["objectSid"],
+            )
+            if entries:
+                from maul.utils.parsers import sid_to_str
+                raw = get_attr_first(entries[0], "objectSid")
+                if isinstance(raw, bytes):
+                    return {sid_to_str(raw)}
+                if raw:
+                    return {str(raw)}
+        except Exception:
+            pass
+        return set()
 
     # ── enrollment right check ────────────────────────────────────────────────
 
