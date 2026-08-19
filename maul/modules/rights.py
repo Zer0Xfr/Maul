@@ -17,7 +17,7 @@ from maul.core.security_descriptor import (
     SecurityDescriptorParser,
     sd_bytes_from_entry,
 )
-from maul.modules import Finding, ModuleBase, Severity, register
+from maul.modules import Finding, ModuleBase, Severity, get_privileged_sids, register
 from maul.utils.constants import EXTENDED_RIGHTS, PRIVILEGED_BUILTIN_SIDS
 
 log = logging.getLogger(__name__)
@@ -279,23 +279,7 @@ class RightsModule(ModuleBase):
 
 def _dc_sids(conn) -> frozenset[str]:
     """Return SIDs that legitimately hold DC-level rights (skip from dangerous ACL checks)."""
-    skip = {
-        "S-1-5-18",   # SYSTEM
-        "S-1-5-9",    # Enterprise Domain Controllers
-        "S-1-3-0",    # Creator Owner
-    }
-    try:
-        dsid = conn.domain_sid
-        skip.update({
-            f"{dsid}-516",  # Domain Controllers
-            f"{dsid}-512",  # Domain Admins
-            f"{dsid}-519",  # Enterprise Admins
-            f"{dsid}-518",  # Schema Admins
-        })
-        skip.update(PRIVILEGED_BUILTIN_SIDS)
-    except Exception:
-        pass
-    return frozenset(skip)
+    return get_privileged_sids(conn)
 
 
 def _describe_mask(mask: int) -> list[str]:

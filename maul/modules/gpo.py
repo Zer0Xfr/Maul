@@ -12,7 +12,7 @@ from maul.core.security_descriptor import (
     SecurityDescriptorParser,
     sd_bytes_from_entry,
 )
-from maul.modules import Finding, ModuleBase, Severity, register
+from maul.modules import Finding, ModuleBase, Severity, get_privileged_sids, register
 from maul.utils.ldap_filters import GPO_CONTAINERS
 
 log = logging.getLogger(__name__)
@@ -230,14 +230,7 @@ class GPOModule(ModuleBase):
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _admin_sids(conn) -> frozenset[str]:
-    skip = {"S-1-5-18", "S-1-5-9", "S-1-3-0"}
-    try:
-        dsid = conn.domain_sid
-        skip.update({f"{dsid}-512", f"{dsid}-519", f"{dsid}-520",
-                     "S-1-5-32-544"})
-    except Exception:
-        pass
-    return frozenset(skip)
+    return get_privileged_sids(conn)
 
 
 def _desc_mask(mask: int) -> str:
